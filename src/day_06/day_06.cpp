@@ -1,12 +1,16 @@
 #include "../common/int_vector2.h"
+#include <atomic>
 #include <bitset>
 #include <cassert>
+#include <cmath>
 #include <fstream>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 namespace {
 using std::size_t;
+using std::thread;
 using std::vector;
 
 // ^ > V <
@@ -34,6 +38,8 @@ public:
     }
 
     void set_visited() { state.set(VISITED); }
+
+    void set_unvisited() { state.set(VISITED, false); }
 
     bool is_visited() const { return state.test(VISITED); }
 
@@ -131,7 +137,7 @@ void part_1(Map input, IntVector2 guard_pos)
     std::cout << "Result: " << visited << std::endl;
 }
 
-bool has_loop(Map input, IntVector2 guard_pos, IntVector2 wall_pos)
+bool has_loop(Map& input, IntVector2 guard_pos, IntVector2 wall_pos)
 {
     size_t dir_index { 0 };
     input[static_cast<size_t>(wall_pos.y)][static_cast<size_t>(wall_pos.x)]
@@ -159,15 +165,20 @@ bool has_loop(Map input, IntVector2 guard_pos, IntVector2 wall_pos)
     return false;
 }
 
-void part_2(Map input, IntVector2 guard_pos)
+void clean_map(Map& input)
+{
+    for (auto& row : input) {
+        for (auto& tile : row) {
+            tile.set_unvisited();
+        }
+    }
+}
+
+void work(Map input, IntVector2 guard_pos, std::atomic<int>& total_result, size_t start,
+    size_t end)
 {
     int total { 0 };
-    std::cout << has_loop(input, guard_pos, IntVector2(0, 0));
-    for (size_t x = 0; x < input[0].size(); x++) {
-        std::cout << "\r"
-                  << (static_cast<float>(x) / static_cast<float>(input.size())
-                         * 100)
-                  << "%" << std::flush;
+    for (size_t x = start; x < end; x++) {
         for (size_t y = 0; y < input.size(); y++) {
             if (input[y][x].is_wall()) {
                 continue;
@@ -177,10 +188,36 @@ void part_2(Map input, IntVector2 guard_pos)
                     IntVector2(static_cast<int>(x), static_cast<int>(y)))) {
                 total++;
             }
+            clean_map(input);
         }
+   }
+
+    total_result += total;
+}
+
+void part_2(Map input, IntVector2 guard_pos)
+{
+    const int numThreads = 6;
+    vector<thread> threads;
+    std::atomic<int> total { 0 };
+
+    size_t total_work = input.size();
+    size_t chunk_size = static_cast<size_t>(std::round(
+        static_cast<float>(total_work) / static_cast<float>(numThreads)));
+
+    for (size_t i = 0; i < numThreads; i++) {
+        size_t start = i * chunk_size;
+        size_t end = std::min((i + 1) * chunk_size, total_work);
+
+        threads.push_back(
+            thread(work, input, guard_pos, std::ref(total), start, end));
     }
 
-    std::cout << "\rResult: " << total << std::endl;
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    std::cout << "Result: " << total << std::endl;
 }
 }
 
